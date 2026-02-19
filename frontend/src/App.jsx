@@ -12,6 +12,12 @@ function App() {
     setError(null)
   }
 
+  const handleClearFile = () => {
+    setFile(null)
+    setResult(null)
+    setError(null)
+  }
+
   const handleUpload = async () => {
     if (!file) return
     setLoading(true)
@@ -46,12 +52,28 @@ function App() {
         </p>
 
         <div className="bg-white rounded-2xl shadow p-8 mb-6">
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileChange}
-            className="block w-full text-sm text-gray-500 mb-4"
-          />
+        <div className="flex items-center gap-2 mb-4">
+          <label className="flex items-center justify-center flex-1 border-2 border-dashed border-indigo-300 rounded-lg p-4 cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition">
+            <span className="text-indigo-600 font-medium">
+              {file ? file.name : "Choose a CSV file..."}
+            </span>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </label>
+          {file && (
+            <button
+              onClick={handleClearFile}
+              title="Clear selected file"
+              className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition flex-shrink-0"
+            >
+              ✕
+            </button>
+          )}
+        </div>
           <button
             onClick={handleUpload}
             disabled={!file || loading}
