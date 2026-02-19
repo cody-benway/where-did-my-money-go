@@ -91,12 +91,25 @@ async def analyze_transactions(file: UploadFile = File(...)):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
+    # Spending over time
+    df["date"] = pd.to_datetime(df["date"])
+    daily_spending = (
+        df[df["amount"] < 0]
+        .groupby(df["date"].dt.strftime("%m/%d"))["amount"]
+        .sum()
+        .abs()
+        .reset_index()
+        .rename(columns={"date": "date", "amount": "amount"})
+        .to_dict(orient="records")
+    )
+
     return {
         "narrative": narrative,
         "stats": {
             "total_income": total_income,
             "total_spent": abs(total_spent),
             "by_category": by_category,
-            "top_merchants": top_merchants
+            "top_merchants": top_merchants,
+            "daily_spending": daily_spending
         }
     }
