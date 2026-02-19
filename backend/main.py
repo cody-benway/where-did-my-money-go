@@ -19,6 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+SKIP_AI = True
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -77,14 +79,17 @@ async def analyze_transactions(file: UploadFile = File(...)):
     Keep the tone helpful and non-judgmental.
     """
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=summary
-        )
-        narrative = response.text
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
+    if SKIP_AI:
+        narrative = "AI analysis skipped. Set SKIP_AI to False to enable."
+    else:
+        try:
+            response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=summary
+            )
+            narrative = response.text
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
     return {
         "narrative": narrative,

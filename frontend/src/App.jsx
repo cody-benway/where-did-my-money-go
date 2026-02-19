@@ -1,4 +1,5 @@
 import { useState } from "react"
+import SpendingCharts from "./components/SpendingCharts"
 
 function App() {
   const [file, setFile] = useState(null)
@@ -117,6 +118,11 @@ function App() {
                     </span>
                   </div>
                 ))}
+            </div>
+
+            {/* Spending Charts */}
+            <div className="mb-6">
+              <SpendingCharts stats={result.stats} />
             </div>
 
             {/* Top Merchants */}
