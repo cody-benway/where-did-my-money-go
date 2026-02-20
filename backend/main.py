@@ -5,6 +5,8 @@ import io
 import os
 from google import genai
 from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import List
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -19,7 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SKIP_AI = True
+SKIP_AI = False
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    question: str
+    transactions: list
+    history: List[ChatMessage] = []
 
 @app.get("/health")
 def health_check():
@@ -105,6 +116,7 @@ async def analyze_transactions(file: UploadFile = File(...)):
 
     return {
         "narrative": narrative,
+        "transactions": df.to_dict(orient="records"),
         "stats": {
             "total_income": total_income,
             "total_spent": abs(total_spent),
@@ -113,3 +125,28 @@ async def analyze_transactions(file: UploadFile = File(...)):
             "daily_spending": daily_spending
         }
     }
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    transactions_text = "\n".join([
+        f"{t.get('date')} | {t.get('description')} | ${t.get('amount')} | {t.get('category')}"
+        for t in request.transactions
+    ])
+
+    system_context = f"""You are a helpful personal finance assistant. 
+    The user has uploaded their transaction data. Answer questions about their spending clearly and concisely.
+    
+    Transaction data:
+    {transactions_text}
+    """
+
+    messages = [{"role": "user", "parts": [system_context + "\n\nUser question: " + request.question]}]
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=system_context + "\n\nUser question: " + request.question
+        )
+        return {"answer": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")

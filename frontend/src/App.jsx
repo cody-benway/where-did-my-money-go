@@ -1,5 +1,6 @@
 import { useState } from "react"
 import SpendingCharts from "./components/SpendingCharts"
+import ChatInterface from "./components/ChatInterface"
 
 function App() {
   const [file, setFile] = useState(null)
@@ -143,7 +144,7 @@ function App() {
             </div>
 
             {/* AI Narrative */}
-            <div className="bg-white rounded-2xl shadow p-6">
+            <div className="bg-white rounded-2xl shadow p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-700 mb-4">
                 AI Spending Analysis
               </h2>
@@ -152,6 +153,11 @@ function App() {
                   {paragraph}
                 </p>
               ))}
+            </div>
+
+            {/* Chat Interface */}
+            <div className="mb-6">
+              <ChatInterface transactions={result.transactions} />
             </div>
           </>
         )}
