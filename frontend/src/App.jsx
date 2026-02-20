@@ -1,6 +1,6 @@
 import { useState } from "react"
 import SpendingCharts from "./components/SpendingCharts"
-import ChatInterface from "./components/ChatInterface"
+import FloatingChat from "./components/FloatingChat"
 
 function App() {
   const [file, setFile] = useState(null)
@@ -170,13 +170,10 @@ function App() {
               ))}
             </div>
 
-            {/* Chat Interface */}
-            <div className="mb-6">
-              <ChatInterface transactions={result.transactions} />
-            </div>
           </>
         )}
       </div>
+      <FloatingChat transactions={result?.transactions} />
     </div>
   )
 }

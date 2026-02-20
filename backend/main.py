@@ -32,7 +32,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str
-    transactions: list
+    transactions: list = []
     history: List[ChatMessage] = []
 
 
@@ -133,22 +133,30 @@ async def chat(request: ChatRequest):
 
     system_context = f"""You are a helpful personal finance assistant. 
     The user has uploaded their transaction data. Answer questions about their spending clearly and concisely.
+
+    Check if the user has uploaded their transaction data. If they have, use the transaction data to answer the question. If they have not, ask them to upload their transaction data in the system; they cannot upload their transaction data in the chat. If they try to upload their transaction data in the chat, ask them to upload it in the system so you can fully analyze their spending and answer their question.
     
     Transaction data:
     {transactions_text}
     """
 
-    contents = [{"role": "user", "parts": [system_context]}]
+    contents = []
     for msg in request.history:
         role = "user" if msg.role == "user" else "model"
-        contents.append({"role": role, "parts": [msg.content]})
-    contents.append({"role": "user", "parts": [request.question]})
+        contents.append({"role": role, "parts": [{"text": msg.content}]})
+    contents.append({"role": "user", "parts": [{"text": request.question}]})
 
     try:
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
-            contents=contents
+            contents=contents,
+            config={"system_instruction": system_context}
         )
         return {"answer": response.text}
     except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise HTTPException(
+                status_code=429,
+                detail="The AI service has reached its daily request limit. Please try again tomorrow or upgrade your Gemini API plan."
+            )
         raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
