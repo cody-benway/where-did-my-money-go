@@ -98,8 +98,8 @@ async def analyze_transactions(file: UploadFile = File(...)):
             contents=summary
         )
         narrative = response.text
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
+    except Exception:
+        narrative = None
 
     df["date"] = pd.to_datetime(df["date"])
     daily_spending = (

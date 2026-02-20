@@ -159,16 +159,18 @@ function App() {
             </div>
 
             {/* AI Narrative */}
-            <div className="bg-white rounded-2xl shadow p-6 mb-6">
-              <h2 className="text-lg font-semibold text-gray-700 mb-4">
-                AI Spending Analysis
-              </h2>
-              {result.narrative.split("\n\n").map((paragraph, i) => (
-                <p key={i} className="text-gray-600 mb-3 leading-relaxed">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
+            {result.narrative && (
+              <div className="bg-white rounded-2xl shadow p-6 mb-6">
+                <h2 className="text-lg font-semibold text-gray-700 mb-4">
+                  AI Spending Analysis
+                </h2>
+                {result.narrative.split("\n\n").map((paragraph, i) => (
+                  <p key={i} className="text-gray-600 mb-3 leading-relaxed">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            )}
 
           </>
         )}
