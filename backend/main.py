@@ -94,7 +94,7 @@ async def analyze_transactions(file: UploadFile = File(...)):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.5-flash-lite",
             contents=summary
         )
         narrative = response.text
@@ -148,7 +148,7 @@ async def chat(request: ChatRequest):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.5-flash-lite",
             contents=contents,
             config={"system_instruction": system_context}
         )
