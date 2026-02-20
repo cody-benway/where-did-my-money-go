@@ -21,8 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SKIP_AI = False
-
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -48,7 +46,6 @@ async def upload_transactions(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {str(e)}")
     
-    # Normalize column names to lowercase, strip whitespace
     df.columns = df.columns.str.lower().str.strip()
 
     return {
@@ -71,7 +68,6 @@ async def analyze_transactions(file: UploadFile = File(...)):
 
     df.columns = df.columns.str.lower().str.strip()
 
-    # Build a summary to send to Gemini
     total_spent = df[df["amount"] < 0]["amount"].sum()
     total_income = df[df["amount"] > 0]["amount"].sum()
     by_category = df[df["amount"] < 0].groupby("category")["amount"].sum().to_dict()
@@ -90,19 +86,15 @@ async def analyze_transactions(file: UploadFile = File(...)):
     Keep the tone helpful and non-judgmental.
     """
 
-    if SKIP_AI:
-        narrative = "AI analysis skipped. Set SKIP_AI to False to enable."
-    else:
-        try:
-            response = client.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=summary
-            )
-            narrative = response.text
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=summary
+        )
+        narrative = response.text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")
 
-    # Spending over time
     df["date"] = pd.to_datetime(df["date"])
     daily_spending = (
         df[df["amount"] < 0]
@@ -110,7 +102,6 @@ async def analyze_transactions(file: UploadFile = File(...)):
         .sum()
         .abs()
         .reset_index()
-        .rename(columns={"date": "date", "amount": "amount"})
         .to_dict(orient="records")
     )
 
@@ -139,8 +130,6 @@ async def chat(request: ChatRequest):
     Transaction data:
     {transactions_text}
     """
-
-    messages = [{"role": "user", "parts": [system_context + "\n\nUser question: " + request.question]}]
 
     try:
         response = client.models.generate_content(
