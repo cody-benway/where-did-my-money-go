@@ -21,45 +21,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+REQUIRED_COLUMNS = {"date", "description", "amount", "category"}
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str
+
 
 class ChatRequest(BaseModel):
     question: str
     transactions: list
     history: List[ChatMessage] = []
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
-@app.post("/upload")
-async def upload_transactions(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="File must be a CSV")
-    
-    contents = await file.read()
-    
-    try:
-        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {str(e)}")
-    
-    df.columns = df.columns.str.lower().str.strip()
-
-    return {
-        "rows": len(df),
-        "columns": list(df.columns),
-        "preview": df.head(5).to_dict(orient="records")
-    }
 
 @app.post("/analyze")
 async def analyze_transactions(file: UploadFile = File(...)):
     if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="File must be a CSV")
+        raise HTTPException(status_code=400, detail="File must be a CSV.")
 
     contents = await file.read()
+
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File is too large. Please upload a CSV under 5 MB.")
 
     try:
         df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
@@ -68,10 +58,26 @@ async def analyze_transactions(file: UploadFile = File(...)):
 
     df.columns = df.columns.str.lower().str.strip()
 
+    missing = REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV is missing required columns: {', '.join(sorted(missing))}. "
+                   f"Expected columns: date, description, amount, category."
+        )
+
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+    if df["amount"].isna().all():
+        raise HTTPException(
+            status_code=400,
+            detail="The 'amount' column could not be parsed as numbers. "
+                   "Make sure amounts are numeric (e.g. -42.50, not '$42.50')."
+        )
+
     total_spent = df[df["amount"] < 0]["amount"].sum()
     total_income = df[df["amount"] > 0]["amount"].sum()
-    by_category = df[df["amount"] < 0].groupby("category")["amount"].sum().to_dict()
-    top_merchants = df[df["amount"] < 0].groupby("description")["amount"].sum().nsmallest(5).to_dict()
+    by_category = df[df["amount"] < 0].groupby("category")["amount"].sum().abs().to_dict()
+    top_merchants = df[df["amount"] < 0].groupby("description")["amount"].sum().nsmallest(5).abs().to_dict()
 
     summary = f"""
     Here is a summary of a user's financial transactions:
@@ -117,6 +123,7 @@ async def analyze_transactions(file: UploadFile = File(...)):
         }
     }
 
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     transactions_text = "\n".join([
@@ -131,10 +138,16 @@ async def chat(request: ChatRequest):
     {transactions_text}
     """
 
+    contents = [{"role": "user", "parts": [system_context]}]
+    for msg in request.history:
+        role = "user" if msg.role == "user" else "model"
+        contents.append({"role": role, "parts": [msg.content]})
+    contents.append({"role": "user", "parts": [request.question]})
+
     try:
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
-            contents=system_context + "\n\nUser question: " + request.question
+            contents=contents
         )
         return {"answer": response.text}
     except Exception as e:

@@ -15,7 +15,7 @@ export default function SpendingCharts({ stats }) {
   const categoryData = Object.entries(stats.by_category)
     .map(([category, amount]) => ({
       category,
-      amount: Math.abs(amount),
+      amount,
     }))
     .sort((a, b) => a.amount - b.amount)
 
