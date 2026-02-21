@@ -1,83 +1,141 @@
+import { useState } from "react"
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
+  PieChart,
+  Pie,
+  Cell,
   Tooltip,
   ResponsiveContainer,
-  Cell,
   LineChart,
   Line,
+  XAxis,
+  YAxis,
   CartesianGrid,
 } from "recharts"
 
+const CATEGORY_COLORS = [
+  "#6366f1", // indigo
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#f59e0b", // amber
+  "#14b8a6", // teal
+  "#f43f5e", // rose
+  "#0ea5e9", // sky
+  "#10b981", // emerald
+  "#f97316", // orange
+  "#a855f7", // purple
+]
+
+const TIME_PERIODS = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly"]
+
+function aggregateSpending(dailySpending, period) {
+  if (!dailySpending || dailySpending.length === 0) return []
+
+  if (period === "Daily") return dailySpending
+
+  const currentYear = new Date().getFullYear()
+
+  const buckets = {}
+  dailySpending.forEach(({ date, amount }) => {
+    const [month, day] = date.split("/").map(Number)
+    const d = new Date(currentYear, month - 1, day)
+    let key
+
+    if (period === "Weekly") {
+      const startOfYear = new Date(currentYear, 0, 1)
+      const weekNum = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7)
+      key = `Wk ${weekNum}`
+    } else if (period === "Monthly") {
+      key = d.toLocaleString("default", { month: "short" })
+    } else if (period === "Quarterly") {
+      const q = Math.ceil((month) / 3)
+      key = `Q${q}`
+    } else if (period === "Yearly") {
+      key = `${currentYear}`
+    }
+
+    buckets[key] = (buckets[key] || 0) + amount
+  })
+
+  return Object.entries(buckets).map(([date, amount]) => ({ date, amount: parseFloat(amount.toFixed(2)) }))
+}
+
+
 export default function SpendingCharts({ stats }) {
+  const [timePeriod, setTimePeriod] = useState("Daily")
+
   const categoryData = Object.entries(stats.by_category)
-    .map(([category, amount]) => ({
-      category,
-      amount,
-    }))
-    .sort((a, b) => a.amount - b.amount)
+    .map(([category, amount]) => ({ name: category, value: amount }))
+    .sort((a, b) => b.value - a.value)
+
+  const timeData = aggregateSpending(stats.daily_spending, timePeriod)
 
   return (
     <div className="space-y-6">
 
-      {/* Spending by Category Bar Chart */}
+      {/* Spending by Category Donut Chart */}
       <div className="bg-white rounded-2xl shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-4">
-          Spending by Category
-        </h2>
-        <ResponsiveContainer width="100%" height={categoryData.length * 40 + 20}>
-          <BarChart
-            data={categoryData}
-            layout="vertical"
-            margin={{ top: 0, right: 60, left: 10, bottom: 0 }}
-          >
-            <XAxis
-              type="number"
-              tickFormatter={(v) => `$${v}`}
-              tick={{ fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              type="category"
-              dataKey="category"
-              tick={{ fontSize: 13 }}
-              width={110}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-            <Bar dataKey="amount" fill="#6366f1" radius={[0, 4, 4, 0]}>
-              {categoryData.map((_, index) => (
-                <Cell key={index} fill="#6366f1" fillOpacity={0.7 + (index / categoryData.length) * 0.3} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <h2 className="text-lg font-semibold text-gray-700 mb-4">Spending by Category</h2>
+        <div className="flex flex-col items-center">
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie
+                data={categoryData}
+                cx="50%"
+                cy="50%"
+                innerRadius={70}
+                outerRadius={110}
+                paddingAngle={3}
+                dataKey="value"
+              >
+                {categoryData.map((_, index) => (
+                  <Cell key={index} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value, name) => [`$${value.toFixed(2)}`, name]} />
+            </PieChart>
+          </ResponsiveContainer>
+
+          {/* Legend */}
+          <div className="w-full grid grid-cols-2 gap-x-6 gap-y-2 mt-2">
+            {categoryData.map((entry, index) => (
+              <div key={entry.name} className="flex items-center gap-2">
+                <span
+                  className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
+                />
+                <span className="text-sm text-gray-600 truncate flex-1">{entry.name}</span>
+                <span className="text-sm font-medium text-gray-800">${entry.value.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Spending Over Time Line Chart */}
       <div className="bg-white rounded-2xl shadow p-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-4">
-          Spending Over Time
-        </h2>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h2 className="text-lg font-semibold text-gray-700">Spending Over Time</h2>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {TIME_PERIODS.map((period) => (
+              <button
+                key={period}
+                onClick={() => setTimePeriod(period)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+                  timePeriod === period
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {period}
+              </button>
+            ))}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={250}>
-          <LineChart
-            data={stats.daily_spending}
-            margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
-          >
+          <LineChart data={timeData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 11 }}
-              interval={3}
-            />
-            <YAxis
-              tickFormatter={(v) => `$${v}`}
-              tick={{ fontSize: 12 }}
-            />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+            <YAxis tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12 }} />
             <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
             <Line
               type="monotone"
@@ -94,3 +152,5 @@ export default function SpendingCharts({ stats }) {
     </div>
   )
 }
+
+export { CATEGORY_COLORS }

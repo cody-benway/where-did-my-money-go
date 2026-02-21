@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import ReactMarkdown from "react-markdown"
 
 export default function FloatingChat({ transactions }) {
@@ -8,6 +8,11 @@ export default function FloatingChat({ transactions }) {
   ])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, loading])
 
   const handleSend = async () => {
     if (!input.trim() || loading) return
@@ -62,8 +67,14 @@ export default function FloatingChat({ transactions }) {
             </button>
           </div>
 
+          {/* Disclaimer */}
+          <div className="flex items-start gap-2 bg-amber-50 border-b border-amber-100 px-4 py-2">
+            <span className="text-amber-500 text-xs mt-0.5 flex-shrink-0">⚠</span>
+            <p className="text-xs text-amber-700">AI can make mistakes. Double-check important financial decisions.</p>
+          </div>
+
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-96">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-80">
             {messages.map((msg, i) => (
               <div
                 key={i}
@@ -96,6 +107,7 @@ export default function FloatingChat({ transactions }) {
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Input */}

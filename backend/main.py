@@ -42,42 +42,142 @@ def health_check():
 
 
 @app.post("/analyze")
-async def analyze_transactions(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="File must be a CSV.")
+async def analyze_transactions(files: List[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="Please upload at least one CSV file.")
 
-    contents = await file.read()
+    frames = []
+    for file in files:
+        if not file.filename.endswith(".csv"):
+            raise HTTPException(status_code=400, detail=f'"{file.filename}" is not a CSV file. All files must be CSVs.')
 
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File is too large. Please upload a CSV under 5 MB.")
+        contents = await file.read()
 
-    try:
-        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {str(e)}")
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f'"{file.filename}" is too large. Each file must be under 5 MB.')
 
-    df.columns = df.columns.str.lower().str.strip()
+        try:
+            frame = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f'Could not parse "{file.filename}": {str(e)}')
 
-    missing = REQUIRED_COLUMNS - set(df.columns)
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"CSV is missing required columns: {', '.join(sorted(missing))}. "
-                   f"Expected columns: date, description, amount, category."
-        )
+        frame.columns = frame.columns.str.lower().str.strip()
 
-    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+        missing = REQUIRED_COLUMNS - set(frame.columns)
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f'"{file.filename}" is missing required columns: {", ".join(sorted(missing))}. '
+                       f"Expected columns: date, description, amount, category."
+            )
+
+        frame["amount"] = pd.to_numeric(frame["amount"], errors="coerce")
+        if frame["amount"].isna().all():
+            raise HTTPException(
+                status_code=400,
+                detail=f'The "amount" column in "{file.filename}" could not be parsed as numbers. '
+                       "Make sure amounts are numeric (e.g. -42.50, not '$42.50')."
+            )
+
+        frames.append(frame)
+
+    df = pd.concat(frames, ignore_index=True).drop_duplicates()
+
     if df["amount"].isna().all():
-        raise HTTPException(
-            status_code=400,
-            detail="The 'amount' column could not be parsed as numbers. "
-                   "Make sure amounts are numeric (e.g. -42.50, not '$42.50')."
-        )
+        raise HTTPException(status_code=400, detail="No valid numeric amounts found across the uploaded files.")
 
     total_spent = df[df["amount"] < 0]["amount"].sum()
     total_income = df[df["amount"] > 0]["amount"].sum()
     by_category = df[df["amount"] < 0].groupby("category")["amount"].sum().abs().to_dict()
     top_merchants = df[df["amount"] < 0].groupby("description")["amount"].sum().nsmallest(5).abs().to_dict()
+
+    df["date"] = pd.to_datetime(df["date"])
+    daily_spending = (
+        df[df["amount"] < 0]
+        .groupby(df["date"].dt.strftime("%m/%d"))["amount"]
+        .sum()
+        .abs()
+        .reset_index()
+        .to_dict(orient="records")
+    )
+
+    # Multi-period trend computation (weekly, monthly, quarterly, yearly)
+    spending_df = df[df["amount"] < 0].copy()
+
+    def build_period_data(grouped_df, period_col, label_fn):
+        """
+        Build all_periods list, spending map, default trends, and default labels
+        for a given period granularity.
+        """
+        # Collect all unique periods in sorted order
+        all_period_keys = sorted(grouped_df[period_col].unique())
+        all_periods = [label_fn(p) for p in all_period_keys]
+
+        # Build spending map: { "Jan 2025": { "Dining": 120.50, ... }, ... }
+        spending = {}
+        for p_key, label in zip(all_period_keys, all_periods):
+            period_rows = grouped_df[grouped_df[period_col] == p_key]
+            spending[label] = {
+                row["category"]: round(float(row["amount"]), 2)
+                for _, row in period_rows.iterrows()
+            }
+
+        # Default: compare two most recent periods
+        default_trends = {}
+        default_labels = None
+        if len(all_periods) >= 2:
+            prev_label = all_periods[-2]
+            curr_label = all_periods[-1]
+            default_labels = [prev_label, curr_label]
+            for category in by_category:
+                prev_amt = spending[prev_label].get(category, 0)
+                curr_amt = spending[curr_label].get(category, 0)
+                if prev_amt > 0:
+                    change_pct = ((curr_amt - prev_amt) / prev_amt) * 100
+                    default_trends[category] = {
+                        "change_pct": round(abs(change_pct), 1),
+                        "direction": "up" if change_pct > 0 else "down",
+                    }
+
+        return {
+            "trends": default_trends,
+            "labels": default_labels,
+            "all_periods": all_periods,
+            "spending": spending,
+        }
+
+    # Weekly
+    spending_df["year_week"] = spending_df["date"].dt.to_period("W")
+    weekly_by_cat = spending_df.groupby(["year_week", "category"])["amount"].sum().abs().reset_index()
+    weekly_data = build_period_data(weekly_by_cat, "year_week", lambda p: f"Wk of {p.start_time.strftime('%b %d')}")
+
+    # Monthly
+    spending_df["year_month"] = spending_df["date"].dt.to_period("M")
+    monthly_by_cat = spending_df.groupby(["year_month", "category"])["amount"].sum().abs().reset_index()
+    monthly_data = build_period_data(monthly_by_cat, "year_month", lambda p: p.strftime("%b %Y"))
+
+    # Quarterly
+    spending_df["year_quarter"] = spending_df["date"].dt.to_period("Q")
+    quarterly_by_cat = spending_df.groupby(["year_quarter", "category"])["amount"].sum().abs().reset_index()
+    quarterly_data = build_period_data(quarterly_by_cat, "year_quarter", lambda p: f"Q{p.quarter} {p.year}")
+
+    # Yearly
+    spending_df["year"] = spending_df["date"].dt.to_period("Y")
+    yearly_by_cat = spending_df.groupby(["year", "category"])["amount"].sum().abs().reset_index()
+    yearly_data = build_period_data(yearly_by_cat, "year", lambda p: str(p.year))
+
+    trends_by_period = {
+        "Weekly":    weekly_data,
+        "Monthly":   monthly_data,
+        "Quarterly": quarterly_data,
+        "Yearly":    yearly_data,
+    }
+
+    # Use monthly trends for the AI narrative summary
+    monthly_trends = monthly_data["trends"]
+    trends_summary = ", ".join(
+        f"{cat}: {t['direction']} {t['change_pct']}%" for cat, t in monthly_trends.items()
+    ) if monthly_trends else "Not enough data for month-over-month trends"
 
     summary = f"""
     Here is a summary of a user's financial transactions:
@@ -85,9 +185,12 @@ async def analyze_transactions(file: UploadFile = File(...)):
     - Total spent: ${abs(total_spent):.2f}
     - Spending by category: {by_category}
     - Top 5 merchants by spending: {top_merchants}
+    - Month-over-month spending trends by category: {trends_summary}
+
     
     Please write a friendly, conversational 3-4 paragraph narrative analyzing this person's 
-    spending. Highlight patterns, call out any notable categories, compare income to spending, 
+    spending. Highlight patterns, call out any notable categories, compare income to spending,
+    mention any notable month-over-month trends (e.g. categories that increased or decreased significantly),
     and offer 2-3 practical and specific suggestions for where they could cut back. 
     Keep the tone helpful and non-judgmental.
     """
@@ -101,19 +204,10 @@ async def analyze_transactions(file: UploadFile = File(...)):
     except Exception:
         narrative = None
 
-    df["date"] = pd.to_datetime(df["date"])
-    daily_spending = (
-        df[df["amount"] < 0]
-        .groupby(df["date"].dt.strftime("%m/%d"))["amount"]
-        .sum()
-        .abs()
-        .reset_index()
-        .to_dict(orient="records")
-    )
-
     return {
         "narrative": narrative,
         "transactions": df.to_dict(orient="records"),
+        "trends_by_period": trends_by_period,
         "stats": {
             "total_income": total_income,
             "total_spent": abs(total_spent),
