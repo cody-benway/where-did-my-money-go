@@ -12,7 +12,7 @@ export default function FloatingChat({ transactions, stats }) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, loading])
+  }, [messages, loading, isOpen])
 
   const handleSend = async () => {
     if (!input.trim() || loading) return
