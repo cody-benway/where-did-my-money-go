@@ -7,9 +7,16 @@ from google import genai
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
+from jinja2 import Environment, FileSystemLoader
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+prompts_env = Environment(
+    loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), "prompts")),
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
 
 app = FastAPI(title="Where Did My Money Go API")
 
@@ -33,6 +40,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     transactions: list = []
+    stats: dict = {}
     history: List[ChatMessage] = []
 
 
@@ -179,26 +187,25 @@ async def analyze_transactions(files: List[UploadFile] = File(...)):
         f"{cat}: {t['direction']} {t['change_pct']}%" for cat, t in monthly_trends.items()
     ) if monthly_trends else "Not enough data for month-over-month trends"
 
-    summary = f"""
-    Here is a summary of a user's financial transactions:
-    - Total income: ${total_income:.2f}
-    - Total spent: ${abs(total_spent):.2f}
-    - Spending by category: {by_category}
-    - Top 5 merchants by spending: {top_merchants}
-    - Month-over-month spending trends by category: {trends_summary}
+    date_range_start = df["date"].min().strftime("%B %d, %Y")
+    date_range_end = df["date"].max().strftime("%B %d, %Y")
 
-    
-    Please write a friendly, conversational 3-4 paragraph narrative analyzing this person's 
-    spending. Highlight patterns, call out any notable categories, compare income to spending,
-    mention any notable month-over-month trends (e.g. categories that increased or decreased significantly),
-    and offer 2-3 practical and specific suggestions for where they could cut back. 
-    Keep the tone helpful and non-judgmental.
-    """
+    analyze_system = prompts_env.get_template("analyze_system.j2").render()
+    analyze_user = prompts_env.get_template("analyze_user.j2").render(
+        date_range_start=date_range_start,
+        date_range_end=date_range_end,
+        total_income=f"{total_income:.2f}",
+        total_spent=f"{abs(total_spent):.2f}",
+        by_category=by_category,
+        top_merchants=top_merchants,
+        trends_summary=trends_summary,
+    )
 
     try:
         response = client.models.generate_content(
             model="gemini-2.5-flash-lite",
-            contents=summary
+            contents=analyze_user,
+            config={"system_instruction": analyze_system},
         )
         narrative = response.text
     except Exception:
@@ -225,16 +232,16 @@ async def chat(request: ChatRequest):
         for t in request.transactions
     ])
 
-    system_context = f"""You are a helpful personal finance assistant. 
-    The user has uploaded their transaction data. Answer questions about their spending clearly and concisely.
-
-    Check if the user has uploaded their transaction data. If they have, use the transaction data to answer the question. If they have not, ask them to upload their transaction data in the system; they cannot upload their transaction data in the chat. If they try to upload their transaction data in the chat, ask them to upload it in the system so you can fully analyze their spending and answer their question.
-    
-    Transaction data:
-    {transactions_text}
-    """
+    system_context = prompts_env.get_template("chat_system.j2").render()
+    transaction_context = prompts_env.get_template("chat_user.j2").render(
+        transactions_text=transactions_text,
+        stats=request.stats,
+    )
 
     contents = []
+    if transactions_text:
+        contents.append({"role": "user", "parts": [{"text": transaction_context}]})
+        contents.append({"role": "model", "parts": [{"text": "Got it, I have your transaction data loaded and ready."}]})
     for msg in request.history:
         role = "user" if msg.role == "user" else "model"
         contents.append({"role": role, "parts": [{"text": msg.content}]})

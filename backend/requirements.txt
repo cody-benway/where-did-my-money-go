@@ -4,3 +4,4 @@ pandas
 google-genai
 python-dotenv
 python-multipart
+jinja2

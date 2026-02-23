@@ -1,0 +1,11 @@
+# INPUT
+Here is a summary of a user's financial transactions from {{ date_range_start }} to {{ date_range_end }}:
+- Total income: ${{ total_income }}
+- Total spent: ${{ total_spent }}
+- Spending by category: {{ by_category }}
+- Top 5 merchants by spending: {{ top_merchants }}
+- Month-over-month spending trends by category: {{ trends_summary }}
+
+# OUTPUT INSTRUCTIONS
+- Please write a friendly, conversational 3-4 paragraph narrative analyzing this person's spending.
+- Highlight patterns, call out any notable categories, compare income to spending, mention any notable month-over-month trends (e.g. categories that increased or decreased significantly), and offer 2-3 practical and specific suggestions for where they could cut back.

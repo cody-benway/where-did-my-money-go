@@ -1,0 +1,14 @@
+{% if stats and stats.total_income is defined %}
+Here is the user's financial data. Use the pre-computed summary figures as the authoritative source for totals — do not re-sum the raw transactions yourself.
+
+## Pre-computed summary
+- Total income: ${{ "%.2f"|format(stats.total_income) }}
+- Total spent: ${{ "%.2f"|format(stats.total_spent) }}
+- Spending by category: {{ stats.by_category }}
+- Top 5 merchants by spending: {{ stats.top_merchants }}
+
+## Raw transactions (for detailed lookups only)
+{{ transactions_text }}
+
+Use this data to answer any questions in our conversation.
+{% endif %}

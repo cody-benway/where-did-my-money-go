@@ -353,7 +353,7 @@ function App() {
           </>
         )}
       </div>
-      <FloatingChat transactions={result?.transactions} />
+      <FloatingChat transactions={result?.transactions} stats={result?.stats} />
     </div>
   )
 }

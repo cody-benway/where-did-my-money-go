@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import ReactMarkdown from "react-markdown"
 
-export default function FloatingChat({ transactions }) {
+export default function FloatingChat({ transactions, stats }) {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hi! Ask me anything about your spending. For example: \"How much did I spend on dining?\" or \"What was my biggest purchase?\"" }
@@ -30,6 +30,7 @@ export default function FloatingChat({ transactions }) {
         body: JSON.stringify({
           question: input,
           transactions: transactions ?? [],
+          stats: stats ?? {},
           history: messages.filter((_, i) => i > 0)
         })
       })
@@ -37,7 +38,11 @@ export default function FloatingChat({ transactions }) {
       if (!res.ok) throw new Error(data.detail)
       setMessages([...updatedMessages, { role: "assistant", content: data.answer }])
     } catch (err) {
-      setMessages([...updatedMessages, { role: "assistant", content: err.message || "Sorry, something went wrong. Please try again." }])
+      const isNetworkError = err instanceof TypeError && err.message === "Failed to fetch"
+      const errorMessage = isNetworkError
+        ? "I'm having trouble connecting to the server. Make sure the backend is running and try again."
+        : err.message || "Sorry, something went wrong. Please try again."
+      setMessages([...updatedMessages, { role: "assistant", content: errorMessage }])
     } finally {
       setLoading(false)
     }
