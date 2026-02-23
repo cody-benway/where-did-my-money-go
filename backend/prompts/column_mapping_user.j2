@@ -1,0 +1,15 @@
+A CSV file has the following column headers:
+{{ headers | join(", ") }}
+
+Here are the first few rows of data:
+{% for row in sample_rows %}
+Row {{ loop.index }}: {{ row }}
+{% endfor %}
+
+Map each of the four required fields to the most appropriate column from the headers above:
+- "date": the column containing transaction dates
+- "description": the column containing merchant names or transaction descriptions
+- "amount": the column containing transaction amounts (numeric values, possibly negative for debits)
+- "category": the column containing spending categories or transaction types
+
+Return only the JSON mapping. If you cannot confidently identify a column for a required field, still return your best guess.
