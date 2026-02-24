@@ -36,7 +36,7 @@ function computeTrends(spending, fromPeriod, toPeriod) {
     if (prev > 0) {
       const change_pct = ((curr - prev) / prev) * 100
       result[category] = {
-        change_pct: Math.abs(change_pct).toFixed(1) * 1,
+        change_pct: parseFloat(Math.abs(change_pct).toFixed(1)),
         direction: change_pct > 0 ? "up" : "down",
       }
     }
@@ -52,6 +52,9 @@ function App() {
   const [trendPeriod, setTrendPeriod] = useState("Monthly")
   const [trendFrom, setTrendFrom] = useState(null)
   const [trendTo, setTrendTo] = useState(null)
+  const [narrative, setNarrative] = useState(null)
+  const [narrativeLoading, setNarrativeLoading] = useState(false)
+  const [narrativeError, setNarrativeError] = useState(null)
 
   // Reset From/To to the two most recent periods when granularity or result changes
   useEffect(() => {
@@ -78,6 +81,8 @@ function App() {
     })
     setResult(null)
     setError(null)
+    setNarrative(null)
+    setNarrativeError(null)
     // Reset input so the same file can be re-added after removal
     e.target.value = ""
   }
@@ -86,12 +91,16 @@ function App() {
     setFiles((prev) => prev.filter((f) => f.name !== name))
     setResult(null)
     setError(null)
+    setNarrative(null)
+    setNarrativeError(null)
   }
 
   const handleClearFiles = () => {
     setFiles([])
     setResult(null)
     setError(null)
+    setNarrative(null)
+    setNarrativeError(null)
   }
 
   const handleUpload = async () => {
@@ -114,6 +123,31 @@ function App() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGenerateNarrative = async () => {
+    if (!result) return
+    setNarrativeLoading(true)
+    setNarrativeError(null)
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/narrative`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stats: result.stats,
+          date_range_start: result.date_range_start,
+          date_range_end: result.date_range_end,
+          trends_summary: result.trends_summary,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail)
+      setNarrative(data.narrative)
+    } catch (err) {
+      setNarrativeError(err.message)
+    } finally {
+      setNarrativeLoading(false)
     }
   }
 
@@ -319,7 +353,6 @@ function App() {
             <div className="bg-white rounded-2xl shadow p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-700 mb-4">Top Merchants</h2>
               {Object.entries(result.stats.top_merchants)
-                .sort((a, b) => b[1] - a[1])
                 .map(([merchant, amount], index) => (
                   <div
                     key={merchant}
@@ -334,22 +367,62 @@ function App() {
             </div>
 
             {/* AI Narrative */}
-            {result.narrative && (
-              <div className="bg-white rounded-2xl shadow p-6 mb-6">
-                <h2 className="text-lg font-semibold text-gray-700 mb-2">AI Spending Analysis</h2>
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-                  <span className="text-amber-500 flex-shrink-0">⚠</span>
-                  <p className="text-xs text-amber-700">
-                    AI-generated analysis. Results may be inaccurate — always verify with your actual statements.
-                  </p>
-                </div>
-                {result.narrative.split("\n\n").map((paragraph, i) => (
-                  <p key={i} className="text-gray-600 mb-3 leading-relaxed">
-                    {paragraph}
-                  </p>
-                ))}
+            <div className="bg-white rounded-2xl shadow p-6 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-700">AI Spending Analysis</h2>
+                {!narrative && (
+                  <button
+                    onClick={handleGenerateNarrative}
+                    disabled={narrativeLoading}
+                    className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    {narrativeLoading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Generating...
+                      </>
+                    ) : "Generate Analysis"}
+                  </button>
+                )}
+                {narrative && (
+                  <button
+                    onClick={() => { setNarrative(null); setNarrativeError(null) }}
+                    className="text-xs text-gray-400 hover:text-red-500 transition"
+                  >
+                    Dismiss
+                  </button>
+                )}
               </div>
-            )}
+
+              {!narrative && !narrativeLoading && !narrativeError && (
+                <p className="text-sm text-gray-400">
+                  Click "Generate Analysis" to get an AI-powered summary of your spending patterns.
+                </p>
+              )}
+
+              {narrativeError && (
+                <p className="text-sm text-red-500">{narrativeError}</p>
+              )}
+
+              {narrative && (
+                <>
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                    <span className="text-amber-500 flex-shrink-0">⚠</span>
+                    <p className="text-xs text-amber-700">
+                      AI-generated analysis. Results may be inaccurate — always verify with your actual statements.
+                    </p>
+                  </div>
+                  {narrative.split("\n\n").map((paragraph, i) => (
+                    <p key={i} className="text-gray-600 mb-3 leading-relaxed">
+                      {paragraph}
+                    </p>
+                  ))}
+                </>
+              )}
+            </div>
           </>
         )}
       </div>

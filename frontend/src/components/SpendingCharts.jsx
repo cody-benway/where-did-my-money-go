@@ -32,25 +32,23 @@ function aggregateSpending(dailySpending, period) {
 
   if (period === "Daily") return dailySpending
 
-  const currentYear = new Date().getFullYear()
-
   const buckets = {}
   dailySpending.forEach(({ date, amount }) => {
-    const [month, day] = date.split("/").map(Number)
-    const d = new Date(currentYear, month - 1, day)
+    const [month, day, year] = date.split("/").map(Number)
+    const d = new Date(year, month - 1, day)
     let key
 
     if (period === "Weekly") {
-      const startOfYear = new Date(currentYear, 0, 1)
+      const startOfYear = new Date(year, 0, 1)
       const weekNum = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7)
-      key = `Wk ${weekNum}`
+      key = `${year} Wk ${weekNum}`
     } else if (period === "Monthly") {
-      key = d.toLocaleString("default", { month: "short" })
+      key = d.toLocaleString("default", { month: "short", year: "numeric" })
     } else if (period === "Quarterly") {
-      const q = Math.ceil((month) / 3)
-      key = `Q${q}`
+      const q = Math.ceil(month / 3)
+      key = `Q${q} ${year}`
     } else if (period === "Yearly") {
-      key = `${currentYear}`
+      key = `${year}`
     }
 
     buckets[key] = (buckets[key] || 0) + amount

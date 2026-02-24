@@ -51,6 +51,13 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = []
 
 
+class NarrativeRequest(BaseModel):
+    stats: dict
+    date_range_start: str
+    date_range_end: str
+    trends_summary: str
+
+
 # ---------------------------------------------------------------------------
 # Tool definitions for function calling
 # ---------------------------------------------------------------------------
@@ -325,7 +332,7 @@ async def analyze_transactions(files: List[UploadFile] = File(...)):
     df["date"] = pd.to_datetime(df["date"])
     daily_spending = (
         df[df["amount"] < 0]
-        .groupby(df["date"].dt.strftime("%m/%d"))["amount"]
+        .groupby(df["date"].dt.strftime("%m/%d/%Y"))["amount"]
         .sum()
         .abs()
         .reset_index()
@@ -406,31 +413,12 @@ async def analyze_transactions(files: List[UploadFile] = File(...)):
     date_range_start = df["date"].min().strftime("%B %d, %Y")
     date_range_end = df["date"].max().strftime("%B %d, %Y")
 
-    analyze_system = prompts_env.get_template("analyze_system.j2").render()
-    analyze_user = prompts_env.get_template("analyze_user.j2").render(
-        date_range_start=date_range_start,
-        date_range_end=date_range_end,
-        total_income=f"{total_income:.2f}",
-        total_spent=f"{abs(total_spent):.2f}",
-        by_category=by_category,
-        top_merchants=top_merchants,
-        trends_summary=trends_summary,
-    )
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=analyze_user,
-            config={"system_instruction": analyze_system},
-        )
-        narrative = response.text
-    except Exception:
-        narrative = None
-
     return {
-        "narrative": narrative,
         "transactions": df.to_dict(orient="records"),
         "trends_by_period": trends_by_period,
+        "date_range_start": date_range_start,
+        "date_range_end": date_range_end,
+        "trends_summary": trends_summary,
         "stats": {
             "total_income": total_income,
             "total_spent": abs(total_spent),
@@ -439,6 +427,36 @@ async def analyze_transactions(files: List[UploadFile] = File(...)):
             "daily_spending": daily_spending
         }
     }
+
+
+# ---------------------------------------------------------------------------
+# Narrative endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/narrative")
+async def generate_narrative(request: NarrativeRequest):
+    analyze_system = prompts_env.get_template("analyze_system.j2").render()
+    analyze_user = prompts_env.get_template("analyze_user.j2").render(
+        date_range_start=request.date_range_start,
+        date_range_end=request.date_range_end,
+        total_income=f"{request.stats.get('total_income', 0):.2f}",
+        total_spent=f"{request.stats.get('total_spent', 0):.2f}",
+        by_category=request.stats.get("by_category", {}),
+        top_merchants=request.stats.get("top_merchants", {}),
+        trends_summary=request.trends_summary,
+    )
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=analyze_user,
+            config={"system_instruction": analyze_system},
+        )
+        return {"narrative": response.text}
+    except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise HTTPException(status_code=429, detail="The AI service has reached its daily request limit. Please try again tomorrow or upgrade your Gemini API plan.")
+        raise HTTPException(status_code=500, detail=f"Failed to generate narrative: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
@@ -515,17 +533,11 @@ async def chat_stream(request: ChatRequest):
                     # Loop again so the model can generate its final text response
                     continue
 
-                # No tool calls — stream the final text response
+                # No tool calls — yield the already-generated text parts
                 text_parts = [p for p in parts if p.text]
                 if text_parts:
-                    # Stream the already-generated text token by token using the streaming API
-                    for chunk in client.models.generate_content_stream(
-                        model="gemini-2.5-flash-lite",
-                        contents=current_contents,
-                        config=config,
-                    ):
-                        if chunk.text:
-                            yield f"data: {json.dumps({'token': chunk.text})}\n\n"
+                    for part in text_parts:
+                        yield f"data: {json.dumps({'token': part.text})}\n\n"
                 else:
                     yield f"data: {json.dumps({'token': ''})}\n\n"
 
@@ -544,44 +556,3 @@ async def chat_stream(request: ChatRequest):
         "X-Accel-Buffering": "no",
     })
 
-
-# ---------------------------------------------------------------------------
-# Chat (non-streaming fallback) endpoint
-# ---------------------------------------------------------------------------
-
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    transactions_text = "\n".join([
-        f"{t.get('date')} | {t.get('description')} | ${t.get('amount')} | {t.get('category')}"
-        for t in request.transactions
-    ])
-
-    system_context = prompts_env.get_template("chat_system.j2").render()
-    transaction_context = prompts_env.get_template("chat_user.j2").render(
-        transactions_text=transactions_text,
-        stats=request.stats,
-    )
-
-    contents = []
-    if transactions_text:
-        contents.append({"role": "user", "parts": [{"text": transaction_context}]})
-        contents.append({"role": "model", "parts": [{"text": "Got it, I have your transaction data loaded and ready."}]})
-    for msg in request.history:
-        role = "user" if msg.role == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg.content}]})
-    contents.append({"role": "user", "parts": [{"text": request.question}]})
-
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=contents,
-            config={"system_instruction": system_context}
-        )
-        return {"answer": response.text}
-    except Exception as e:
-        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            raise HTTPException(
-                status_code=429,
-                detail="The AI service has reached its daily request limit. Please try again tomorrow or upgrade your Gemini API plan."
-            )
-        raise HTTPException(status_code=500, detail=f"Gemini error: {str(e)}")

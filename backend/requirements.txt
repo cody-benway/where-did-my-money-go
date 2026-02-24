@@ -5,4 +5,3 @@ google-genai
 python-dotenv
 python-multipart
 jinja2
-sse-starlette
