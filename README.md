@@ -8,7 +8,7 @@ A personal finance analyzer powered by AI. Upload one or more bank or credit car
 
 - **CSV upload** — supports multiple files; accepts any CSV with `date`, `description`, `amount`, and `category` columns
 - **AI column mapping** — if your CSV uses different column names, Gemini automatically infers the correct mappings so you don't have to rename anything
-- **AI spending narrative** — Gemini generates a friendly 3–4 paragraph analysis of your spending patterns with actionable suggestions
+- **On-demand AI spending narrative** — click "Generate Analysis" to get a friendly 3–4 paragraph Gemini-powered summary of your spending patterns with actionable suggestions
 - **Category & merchant breakdowns** — ranked lists showing where your money is going
 - **Interactive charts** — donut chart by category and a spending-over-time line chart with Daily / Weekly / Monthly / Quarterly / Yearly views (Recharts)
 - **Spending trends** — compare any two periods side-by-side with per-category trend indicators
@@ -23,7 +23,7 @@ A personal finance analyzer powered by AI. Upload one or more bank or credit car
 |-------|-----------|
 | Frontend | React 19, Vite, Tailwind CSS 4, Recharts |
 | Backend | Python, FastAPI, pandas |
-| AI | Google Gemini 2.5 Flash Lite (streaming + function calling) |
+| AI | Google Gemini 2.5 Flash Lite (on-demand narrative, streaming chat, function calling) |
 
 ---
 
@@ -81,7 +81,7 @@ All sample files use the standard `date`, `description`, `amount`, `category` fo
 ```
 where-did-my-money-go/
 ├── backend/
-│   ├── main.py              # FastAPI app — analyze, streaming chat, function calling, column mapping
+│   ├── main.py              # FastAPI app — analyze, on-demand narrative, streaming chat, function calling, column mapping
 │   ├── requirements.txt
 │   ├── .env.example
 │   └── prompts/
